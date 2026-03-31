@@ -56,6 +56,7 @@ Then run `/setup`. Claude Code handles everything: dependencies, authentication,
 **Customization = code changes.** No configuration sprawl. Want different behavior? Modify the code. The codebase is small enough that it's safe to make changes.
 
 **AI-native.**
+
 - No installation wizard; Claude Code guides setup.
 - No monitoring dashboard; ask Claude what's happening.
 - No debugging tools; describe the problem and Claude fixes it.
@@ -87,6 +88,7 @@ Talk to your assistant with the trigger word (default: `@Andy`):
 ```
 
 From the main channel (your self-chat), you can manage groups and tasks:
+
 ```
 @Andy list all scheduled tasks across groups
 @Andy pause the Monday briefing task
@@ -119,6 +121,7 @@ Users then run `/add-telegram` on their fork and get clean code that does exactl
 Skills we'd like to see:
 
 **Communication Channels**
+
 - `/add-signal` - Add Signal as a channel
 
 ## Requirements
@@ -139,6 +142,7 @@ Single Node.js process. Channels are added via skills and self-register at start
 For the full architecture details, see the [documentation site](https://docs.nanoclaw.dev/concepts/architecture).
 
 Key files:
+
 - `src/index.ts` - Orchestrator: state, message loop, agent invocation
 - `src/channels/registry.ts` - Channel registry (self-registration at startup)
 - `src/ipc.ts` - IPC watcher and task processing
@@ -177,9 +181,24 @@ ANTHROPIC_AUTH_TOKEN=your-token-here
 ```
 
 This allows you to use:
+
 - Local models via [Ollama](https://ollama.ai) with an API proxy
 - Open-source models hosted on [Together AI](https://together.ai), [Fireworks](https://fireworks.ai), etc.
 - Custom model deployments with Anthropic-compatible APIs
+
+When `ANTHROPIC_BASE_URL` is set, NanoClaw skips OneCLI's credential proxy and injects `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, and (optionally) `ANTHROPIC_API_KEY` directly into every Claude container. Requests go straight to your endpoint, so you can point agents at a localhost proxy (e.g., `http://host.docker.internal:8000` for Docker or `http://host.containers.internal:8000` for Apple Container). After updating `.env`, restart NanoClaw so new containers inherit the override.
+
+Need to talk to an OpenAI-compatible server (e.g., `llama.cpp`) while still sending Anthropic-formatted requests? Run [anthropic-proxy](https://github.com/maxnowack/anthropic-proxy) locally:
+
+```bash
+# Terminal 1 - start the proxy on port 3000
+ANTHROPIC_PROXY_BASE_URL=http://localhost:8001/v1 npm run proxy
+
+# Terminal 2 - point NanoClaw at the proxy
+echo "ANTHROPIC_BASE_URL=http://localhost:3000" >> .env
+```
+
+`ANTHROPIC_PROXY_BASE_URL` can target any OpenAI-compatible base URL. The proxy rewrites NanoClaw's Anthropic requests into OpenAI format so local backends keep working even when Claude tries to call tools.
 
 Note: The model must support the Anthropic API format for best compatibility.
 

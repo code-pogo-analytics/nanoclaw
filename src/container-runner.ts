@@ -27,6 +27,10 @@ import {
 import { OneCLI } from '@onecli-sh/sdk';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
+import {
+  buildContainerAnthropicEnv,
+  getLocalAnthropicEnv,
+} from './anthropic-env.js';
 
 const onecli = new OneCLI({ url: ONECLI_URL });
 
@@ -223,29 +227,50 @@ function buildVolumeMounts(
   return mounts;
 }
 
+interface BuildContainerArgsOptions {
+  agentIdentifier?: string;
+  extraEnv?: Record<string, string> | null;
+  skipOneCLI?: boolean;
+}
+
 async function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
-  agentIdentifier?: string,
+  options: BuildContainerArgsOptions = {},
 ): Promise<string[]> {
+  const { agentIdentifier, extraEnv, skipOneCLI } = options;
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
 
+  if (extraEnv) {
+    for (const [key, value] of Object.entries(extraEnv)) {
+      if (!value) continue;
+      args.push('-e', `${key}=${value}`);
+    }
+  }
+
   // OneCLI gateway handles credential injection — containers never see real secrets.
   // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.
-  const onecliApplied = await onecli.applyContainerConfig(args, {
-    addHostMapping: false, // Nanoclaw already handles host gateway
-    agent: agentIdentifier,
-  });
-  if (onecliApplied) {
-    logger.info({ containerName }, 'OneCLI gateway config applied');
-  } else {
-    logger.warn(
+  if (skipOneCLI) {
+    logger.info(
       { containerName },
-      'OneCLI gateway not reachable — container will have no credentials',
+      'Skipping OneCLI gateway config (local Anthropic endpoint configured)',
     );
+  } else {
+    const onecliApplied = await onecli.applyContainerConfig(args, {
+      addHostMapping: false, // Nanoclaw already handles host gateway
+      agent: agentIdentifier,
+    });
+    if (onecliApplied) {
+      logger.info({ containerName }, 'OneCLI gateway config applied');
+    } else {
+      logger.warn(
+        { containerName },
+        'OneCLI gateway not reachable — container will have no credentials',
+      );
+    }
   }
 
   // Runtime-specific args for host gateway resolution
@@ -292,11 +317,20 @@ export async function runContainerAgent(
   const agentIdentifier = input.isMain
     ? undefined
     : group.folder.toLowerCase().replace(/_/g, '-');
-  const containerArgs = await buildContainerArgs(
-    mounts,
-    containerName,
+  const localAnthropicEnv = getLocalAnthropicEnv();
+  const containerReadyAnthropicEnv = buildContainerAnthropicEnv();
+  if (localAnthropicEnv) {
+    logger.info(
+      { group: group.name, baseUrl: localAnthropicEnv.ANTHROPIC_BASE_URL },
+      'Routing Claude SDK to custom Anthropic-compatible endpoint',
+    );
+  }
+
+  const containerArgs = await buildContainerArgs(mounts, containerName, {
     agentIdentifier,
-  );
+    extraEnv: containerReadyAnthropicEnv,
+    skipOneCLI: Boolean(localAnthropicEnv),
+  });
 
   logger.debug(
     {
