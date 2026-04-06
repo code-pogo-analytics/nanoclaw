@@ -53,6 +53,12 @@ interface SessionsIndex {
   entries: SessionEntry[];
 }
 
+type McpServerOption = {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+};
+
 interface SDKUserMessage {
   type: 'user';
   message: { role: 'user'; content: string };
@@ -125,6 +131,14 @@ function writeOutput(output: ContainerOutput): void {
 
 function log(message: string): void {
   console.error(`[agent-runner] ${message}`);
+}
+
+function parseArgList(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
 }
 
 function getSessionSummary(
@@ -435,6 +449,67 @@ async function runQuery(
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
 
+  const duckduckgoMcpEnabled = process.env.DUCKDUCKGO_MCP_DISABLED !== '1';
+  const duckduckgoMcpCommand = (
+    process.env.DUCKDUCKGO_MCP_COMMAND || 'duckduckgo-mcp-server'
+  ).trim();
+  const duckduckgoMcpArgs = parseArgList(process.env.DUCKDUCKGO_MCP_ARGS);
+  const duckduckgoEnv: Record<string, string> = {};
+  if (process.env.DDG_SAFE_SEARCH) {
+    duckduckgoEnv.DDG_SAFE_SEARCH = process.env.DDG_SAFE_SEARCH;
+  }
+  if (process.env.DDG_REGION) {
+    duckduckgoEnv.DDG_REGION = process.env.DDG_REGION;
+  }
+
+  const allowedTools = [
+    'Bash',
+    'Read',
+    'Write',
+    'Edit',
+    'Glob',
+    'Grep',
+    'WebSearch',
+    'WebFetch',
+    'Task',
+    'TaskOutput',
+    'TaskStop',
+    'TeamCreate',
+    'TeamDelete',
+    'SendMessage',
+    'TodoWrite',
+    'ToolSearch',
+    'Skill',
+    'NotebookEdit',
+    'mcp__nanoclaw__*',
+    ...(duckduckgoMcpEnabled ? ['mcp__duckduckgo__*'] : []),
+  ];
+
+  const mcpServers: Record<string, McpServerOption> = {
+    nanoclaw: {
+      command: 'node',
+      args: [mcpServerPath],
+      env: {
+        NANOCLAW_CHAT_JID: containerInput.chatJid,
+        NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
+        NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+      },
+    },
+  };
+
+  if (duckduckgoMcpEnabled) {
+    const duckduckgoConfig: McpServerOption = {
+      command: duckduckgoMcpCommand,
+    };
+    if (duckduckgoMcpArgs.length > 0) {
+      duckduckgoConfig.args = duckduckgoMcpArgs;
+    }
+    if (Object.keys(duckduckgoEnv).length > 0) {
+      duckduckgoConfig.env = duckduckgoEnv;
+    }
+    mcpServers.duckduckgo = duckduckgoConfig;
+  }
+
   for await (const message of query({
     prompt: stream,
     options: {
@@ -449,42 +524,12 @@ async function runQuery(
             append: globalClaudeMd,
           }
         : undefined,
-      allowedTools: [
-        'Bash',
-        'Read',
-        'Write',
-        'Edit',
-        'Glob',
-        'Grep',
-        'WebSearch',
-        'WebFetch',
-        'Task',
-        'TaskOutput',
-        'TaskStop',
-        'TeamCreate',
-        'TeamDelete',
-        'SendMessage',
-        'TodoWrite',
-        'ToolSearch',
-        'Skill',
-        'NotebookEdit',
-        'mcp__nanoclaw__*',
-      ],
+      allowedTools,
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: ['project', 'user'],
-      mcpServers: {
-        nanoclaw: {
-          command: 'node',
-          args: [mcpServerPath],
-          env: {
-            NANOCLAW_CHAT_JID: containerInput.chatJid,
-            NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
-            NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
-          },
-        },
-      },
+      mcpServers,
       hooks: {
         PreCompact: [
           { hooks: [createPreCompactHook(containerInput.assistantName)] },
