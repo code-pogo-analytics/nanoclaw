@@ -653,6 +653,45 @@ The `nanoclaw` MCP server is created dynamically per agent call with the current
 
 ---
 
+### DuckDuckGo MCP (search)
+
+NanoClaw can launch the open-source [duckduckgo-mcp-server](https://github.com/nickclyde/duckduckgo-mcp-server) alongside the built-in `nanoclaw` MCP. This exposes DuckDuckGo search and page-fetching tools directly to Claude agents.
+
+**Enablement & install**
+
+1. Install the server from PyPI (requires [uv](https://github.com/astral-sh/uv)):
+   ```bash
+   uv pip install duckduckgo-mcp-server
+   ```
+2. NanoClaw spawns the server via `mcpServers.duckduckgo` (stdio transport). Defaults:
+   ```env
+   DUCKDUCKGO_MCP_COMMAND=uvx
+   DUCKDUCKGO_MCP_ARGS=duckduckgo-mcp-server
+   ```
+3. Optional environment tweaks passed through to the MCP process:
+   - `DDG_SAFE_SEARCH` (STRICT | MODERATE | OFF)
+   - `DDG_REGION` (e.g., `us-en`, `jp-ja`, `wt-wt`)
+4. Set `DUCKDUCKGO_MCP_DISABLED=1` to opt out entirely.
+
+**Claude Desktop/Code parity**
+
+The same command/args pair can be used when wiring Claude Desktop or Claude Code manually:
+
+```json
+{
+  "mcpServers": {
+    "ddg-search": {
+      "command": "uvx",
+      "args": ["duckduckgo-mcp-server"]
+    }
+  }
+}
+```
+
+NanoClaw automatically exposes matching tools via the `mcp__duckduckgo__*` wildcard so Claude can call DuckDuckGo search just like the internal scheduling tools.
+
+---
+
 ## Deployment
 
 NanoClaw runs as a single macOS launchd service.

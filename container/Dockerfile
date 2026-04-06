@@ -3,7 +3,7 @@
 
 FROM node:22-slim
 
-# Install system dependencies for Chromium
+# Install system dependencies for Chromium and Python/uv
 RUN apt-get update && apt-get install -y \
     chromium \
     fonts-liberation \
@@ -26,11 +26,14 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Chromium path for agent-browser
-ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+# Install uv (Python package manager) for MCP servers
+ENV PATH="/root/.local/bin/:$PATH"
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN uv venv
+RUN uv pip install duckduckgo-mcp-server
 
-# Install agent-browser and claude-code globally
+# Install agent-browser and claude-code globally (set npm config for network)
+ENV NPM_CONFIG_LOGLEVEL=warn
 RUN npm install -g agent-browser @anthropic-ai/claude-code
 
 # Create app directory
